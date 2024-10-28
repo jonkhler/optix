@@ -62,17 +62,17 @@ class FreeLens(eqx.Module, Generic[T, S]):
         """
         return eqx.tree_at(self.where, obj, val)
     
-    def apply(self, obj: T, new: Callable[[S], S]) -> T:
+    def apply(self, obj: T, update: Callable[[S], S]) -> T:
         """ Apply a function to the focused value in the object.
 
         Args:
-            obj: The object to modify.
+            update: The object to modify.
             new: The function to apply to the focused value.
             
         Returns:
             A modified copy of the object.
         """
-        return eqx.tree_at(self.where, obj, replace_fn=new)
+        return eqx.tree_at(self.where, obj, replace=update(self.get(obj)))
     
     def bind(self, obj: T) -> BoundLens[T, S]:
         """ Bind the lens to an object.
@@ -114,18 +114,18 @@ class BoundLens(eqx.Module, Generic[T, S]):
         Returns:
             A modified copy of the object.
         """
-        return eqx.tree_at(self.where, self.obj, val)
+        return eqx.tree_at(self.where, self.obj, replace=val)
     
-    def apply(self, new: Callable[[S], S]) -> T:
+    def apply(self, update: Callable[[S], S]) -> T:
         """ Apply a function to the focused value in the object.
 
         Args:
-            new: The function to apply to the focused value.
+            update: The function to apply to the focused value.
 
         Returns:
             A modified copy of the object.
         """
-        return eqx.tree_at(self.where, self.obj, replace_fn=new)
+        return eqx.tree_at(self.where, self.obj, replace=update(self.get()))
     
 
 class Focused(eqx.Module, Generic[T]):
