@@ -25,7 +25,7 @@ class Lens(Protocol[T, S]):
     def set(self, val: S) -> T:
         ...
     
-    def apply(self, new: Callable[[S], S]) -> T:
+    def apply(self, update: Callable[[S], S]) -> T:
         ...
 
 
