@@ -27,9 +27,6 @@ class Lens(Protocol[T, S]):
     
     def apply(self, new: Callable[[S], S]) -> T:
         ...
-    
-    def chain(self, other: Lens[S, U]) -> Lens[T, U]:
-        ...
 
 
 class FreeLens(eqx.Module, Generic[T, S]):
