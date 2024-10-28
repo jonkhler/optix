@@ -7,26 +7,12 @@ from typing import Generic, Protocol, TypeVar, runtime_checkable
 import equinox as eqx
 
 
-__all__ = ["Lens", "FreeLens", "BoundLens", "Focused", "focus"]
+__all__ = ["Lens", "FreeLens", "Lens", "Focused", "focus"]
 
 
 T = TypeVar("T")
 S = TypeVar("S")
 U = TypeVar("U")
-
-
-@runtime_checkable
-class Lens(Protocol[T, S]):
-    where: Callable[[T], S]
-
-    def get(self) -> S:
-        ...
-    
-    def set(self, val: S) -> T:
-        ...
-    
-    def apply(self, update: Callable[[S], S]) -> T:
-        ...
 
 
 class FreeLens(eqx.Module, Generic[T, S]):
@@ -74,7 +60,7 @@ class FreeLens(eqx.Module, Generic[T, S]):
         """
         return eqx.tree_at(self.where, obj, replace=update(self.get(obj)))
     
-    def bind(self, obj: T) -> BoundLens[T, S]:
+    def bind(self, obj: T) -> Lens[T, S]:
         """ Bind the lens to an object.
 
         Args:
@@ -83,10 +69,10 @@ class FreeLens(eqx.Module, Generic[T, S]):
         Returns:
             A bound lens.
         """
-        return BoundLens(obj, self.where)
+        return Lens(obj, self.where)
 
 
-class BoundLens(eqx.Module, Generic[T, S]):
+class Lens(eqx.Module, Generic[T, S]):
     """ A lens that focuses on a value in a bound object.
 
     Args:
@@ -136,7 +122,7 @@ class Focused(eqx.Module, Generic[T]):
     """
     obj: T
 
-    def at(self, where: Callable[[T], S]) -> BoundLens[T, S]:
+    def at(self, where: Callable[[T], S]) -> Lens[T, S]:
         """ Focus on a value in the object.
 
         Args:
@@ -145,7 +131,7 @@ class Focused(eqx.Module, Generic[T]):
         Returns:
             A bound lens.
         """
-        return BoundLens(self.obj, where)
+        return Lens(self.obj, where)
 
 
 def focus(obj: T) -> Focused[T]:

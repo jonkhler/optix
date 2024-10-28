@@ -1,6 +1,5 @@
 import re
 
-import pytest
 
 import equinox as eqx
 import jax
