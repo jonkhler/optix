@@ -34,7 +34,7 @@ result = focus(data).at(lambda x: x.nested.y).apply(jnp.square)
 ## Installation
 
 ```bash
-pip install optix
+pip install jax-optix
 ```
 
 ## License
