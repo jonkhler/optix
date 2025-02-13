@@ -15,6 +15,9 @@ dependencies = [
     "pytest>=8.3.4",
 ]
 
+[tool.hatch.metadata]
+allow-direct-references = true 
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/optix"]
 
