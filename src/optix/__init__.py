@@ -110,7 +110,7 @@ class BoundArrayLens[T, S, I](eqx.Module):
             )
         )
 
-    def apply(self, update: Callable[[jax.Array], jax.Array], **kwargs) -> T:
+    def apply(self, update: Callable[[S], S], **kwargs) -> T:
         return self.lens.apply(
             lambda out: jax.tree.map(
                 lambda x: x.at[self.index].apply(update, **kwargs), out
