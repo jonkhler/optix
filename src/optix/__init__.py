@@ -1,21 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 import equinox as eqx
 
 
 __all__ = ["Lens", "FreeLens", "Lens", "Focused", "focus"]
 
-
-T = TypeVar("T")
-S = TypeVar("S")
-U = TypeVar("U")
-
-
-class FreeLens(eqx.Module, Generic[T, S]):
+class FreeLens[T, S](eqx.Module):
     """ A lens that focuses on a value in an object.
 
     Args:
@@ -72,7 +64,7 @@ class FreeLens(eqx.Module, Generic[T, S]):
         return Lens(obj, self.where)
 
 
-class Lens(eqx.Module, Generic[T, S]):
+class Lens[T, S](eqx.Module):
     """ A lens that focuses on a value in a bound object.
 
     Args:
@@ -114,7 +106,7 @@ class Lens(eqx.Module, Generic[T, S]):
         return eqx.tree_at(self.where, self.obj, replace=update(self.get()))
     
 
-class Focused(eqx.Module, Generic[T]):
+class Focused[T](eqx.Module):
     """ An object that can be focused on.
 
     Args:
@@ -122,7 +114,7 @@ class Focused(eqx.Module, Generic[T]):
     """
     obj: T
 
-    def at(self, where: Callable[[T], S]) -> Lens[T, S]:
+    def at[S](self, where: Callable[[T], S]) -> Lens[T, S]:
         """ Focus on a value in the object.
 
         Args:
@@ -134,6 +126,6 @@ class Focused(eqx.Module, Generic[T]):
         return Lens(self.obj, where)
 
 
-def focus(obj: T) -> Focused[T]:
+def focus[T](obj: T) -> Focused[T]:
     """ Focus on an object. """
     return Focused(obj)
