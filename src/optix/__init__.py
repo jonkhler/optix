@@ -6,40 +6,44 @@ from typing import Protocol
 import equinox as eqx
 import jax
 
-
-__all__ = ["Lens", "BoundLens", "FreeLens", "BoundLens", "Focused", "focus"]
-
-
+__all__ = ["Lens", "BoundLens", "UnboundLens", "BoundLens", "Focused", "focus"]
 
 
 class Lens[T, S](Protocol):
-    """ A protocol for lenses. """
+    """A protocol for lenses."""
 
     def get(self) -> S:
-        """ Get the value of the focus in the object. """
+        """Get the value of the focus in the object."""
         ...
 
     def set(self, val: S) -> T:
-        """ Set the value of the focus in the object. """
+        """Set the value of the focus in the object."""
         ...
 
     def apply(self, update: Callable[[S], S]) -> T:
-        """ Apply a function to the focused value in the object. """
+        """Apply a function to the focused value in the object."""
         ...
 
 
+class FreeLens[T, S](Protocol):
+    """A protocol for free lenses."""
 
-class FreeLens[T, S](eqx.Module):
-    """ A lens that focuses on a value in an object.
+    def bind(self, obj: T) -> BoundLens[T, S]:
+        """Bind the lens to an object."""
+        ...
+
+
+class UnboundLens[T, S](eqx.Module):
+    """A lens that focuses on a value in an object.
 
     Args:
         where: A function that retrieves the focused value from the object.
     """
 
     where: Callable[[T], S]
-    
+
     def bind(self, obj: T) -> BoundLens[T, S]:
-        """ Bind the lens to an object.
+        """Bind the lens to an object.
 
         Args:
             obj: The object to bind to.
@@ -51,10 +55,10 @@ class FreeLens[T, S](eqx.Module):
 
 
 class BoundLens[T, S](eqx.Module):
-    """ A lens that focuses on a value in a bound object.
+    """A lens that focuses on a value in a bound object.
 
     Args:
-        obj: The object to focus on. 
+        obj: The object to focus on.
         where: A function that retrieves the focused value from the object.
     """
 
@@ -62,15 +66,15 @@ class BoundLens[T, S](eqx.Module):
     where: Callable[[T], S]
 
     def get(self) -> S:
-        """ Get the value of the focus in the object.
+        """Get the value of the focus in the object.
 
         Returns:
             The focused value.
         """
         return self.where(self.obj)
-    
+
     def set(self, val: S) -> T:
-        """ Set the value of the focus in the object.
+        """Set the value of the focus in the object.
 
         Args:
             val: The new value to set.
@@ -79,9 +83,9 @@ class BoundLens[T, S](eqx.Module):
             A modified copy of the object.
         """
         return eqx.tree_at(self.where, self.obj, replace=val)
-    
+
     def apply(self, update: Callable[[S], S]) -> T:
-        """ Apply a function to the focused value in the object.
+        """Apply a function to the focused value in the object.
 
         Args:
             update: The function to apply to the focused value.
@@ -90,36 +94,42 @@ class BoundLens[T, S](eqx.Module):
             A modified copy of the object.
         """
         return eqx.tree_at(self.where, self.obj, replace=update(self.get()))
-    
 
 
-class ArrayLens[T, I](eqx.Module):
-
+class BoundArrayLens[T, I](eqx.Module):
     lens: Lens[T, jax.Array]
     index: I
 
     def get(self, **kwargs) -> jax.Array:
         arr = self.lens.get()
         return arr.at[self.index].get(**kwargs)
-    
+
     def set(self, val: jax.Array, **kwargs) -> T:
         return self.lens.apply(lambda arr: arr.at[self.index].set(val, **kwargs))
-    
+
     def apply(self, update: Callable[[jax.Array], jax.Array], **kwargs) -> T:
         return self.lens.apply(lambda arr: arr.at[self.index].apply(update, **kwargs))
 
 
+class UnboundArrayLens[T, I](eqx.Module):
+    lens: UnboundLens[T, jax.Array]
+    index: I
+
+    def bind(self, obj: T) -> BoundArrayLens[T, I]:
+        return BoundArrayLens(self.lens.bind(obj), self.index)
+
 
 class Focused[T](eqx.Module):
-    """ An object that can be focused on.
+    """An object that can be focused on.
 
     Args:
         obj: The object to focus on.
     """
+
     obj: T
 
     def at[S](self, where: Callable[[T], S]) -> Lens[T, S]:
-        """ Focus on a value in the object.
+        """Focus on a value in the object.
 
         Args:
             where: A function that retrieves the focused value from the object.
@@ -129,8 +139,10 @@ class Focused[T](eqx.Module):
         """
         return BoundLens(self.obj, where)
 
-    def at_index[I](self, where: Callable[[T], jax.Array], index: I) -> ArrayLens[T, jax.Array]:
-        """ Focus on an index in an array in the object.
+    def at_index[I](
+        self, where: Callable[[T], jax.Array], index: I
+    ) -> BoundArrayLens[T, jax.Array]:
+        """Focus on an index in an array in the object.
 
         Args:
             where: A function that retrieves the focused value from the object.
@@ -139,9 +151,36 @@ class Focused[T](eqx.Module):
         Returns:
             A bound lens.
         """
-        return ArrayLens(self.at(where), index)
+        return BoundArrayLens(self.at(where), index)
 
 
 def focus[T](obj: T) -> Focused[T]:
-    """ Focus on an object. """
+    """Focus on an object."""
     return Focused(obj)
+
+
+def lens[T, S](where: Callable[[T], S]) -> UnboundLens[T, S]:
+    """Create a lens that focuses on a value in an object.
+
+    Args:
+        where: A function that retrieves the focused value from the object.
+
+    Returns:
+        An unbound lens.
+    """
+    return UnboundLens(where)
+
+
+def array_lens[T, I](
+    where: Callable[[T], jax.Array], index: I
+) -> UnboundArrayLens[T, I]:
+    """Create a lens that focuses on an index in an array in an object.
+
+    Args:
+        where: A function that retrieves the focused value from the object.
+        index: The index to focus on.
+
+    Returns:
+        An unbound lens.
+    """
+    return UnboundArrayLens(lens(where), index)

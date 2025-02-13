@@ -1,6 +1,6 @@
 [project]
 name = "jax-optix"
-version = "0.1.5"
+version = "0.1.6"
 description = "Zero-overhead functional lensing for JAX PyTrees"
 readme = "README.md"
 requires-python = ">=3.12"
