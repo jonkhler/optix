@@ -96,26 +96,33 @@ class BoundLens[T, S](eqx.Module):
         return eqx.tree_at(self.where, self.obj, replace=update(self.get()))
 
 
-class BoundArrayLens[T, I](eqx.Module):
-    lens: Lens[T, jax.Array]
+class BoundArrayLens[T, S, I](eqx.Module):
+    lens: Lens[T, S]
     index: I
 
-    def get(self, **kwargs) -> jax.Array:
-        arr = self.lens.get()
-        return arr.at[self.index].get(**kwargs)
+    def get(self, **kwargs) -> S:
+        return jax.tree.map(lambda x: x.at[self.index].get(**kwargs), self.lens.get())
 
-    def set(self, val: jax.Array, **kwargs) -> T:
-        return self.lens.apply(lambda arr: arr.at[self.index].set(val, **kwargs))
+    def set(self, val: S, **kwargs) -> T:
+        return self.lens.apply(
+            lambda out: jax.tree.map(
+                lambda x, y: x.at[self.index].set(y, **kwargs), out, val
+            )
+        )
 
     def apply(self, update: Callable[[jax.Array], jax.Array], **kwargs) -> T:
-        return self.lens.apply(lambda arr: arr.at[self.index].apply(update, **kwargs))
+        return self.lens.apply(
+            lambda out: jax.tree.map(
+                lambda x: x.at[self.index].apply(update, **kwargs), out
+            )
+        )
 
 
-class UnboundArrayLens[T, I](eqx.Module):
-    lens: UnboundLens[T, jax.Array]
+class UnboundArrayLens[T, S, I](eqx.Module):
+    lens: UnboundLens[T, S]
     index: I
 
-    def bind(self, obj: T) -> BoundArrayLens[T, I]:
+    def bind(self, obj: T) -> BoundArrayLens[T, S, I]:
         return BoundArrayLens(self.lens.bind(obj), self.index)
 
 
@@ -139,9 +146,7 @@ class Focused[T](eqx.Module):
         """
         return BoundLens(self.obj, where)
 
-    def at_index[I](
-        self, where: Callable[[T], jax.Array], index: I
-    ) -> BoundArrayLens[T, jax.Array]:
+    def at_index[S, I](self, where: Callable[[T], S], index: I) -> BoundArrayLens[T, S]:
         """Focus on an index in an array in the object.
 
         Args:
@@ -171,9 +176,7 @@ def lens[T, S](where: Callable[[T], S]) -> UnboundLens[T, S]:
     return UnboundLens(where)
 
 
-def array_lens[T, I](
-    where: Callable[[T], jax.Array], index: I
-) -> UnboundArrayLens[T, I]:
+def array_lens[T, S, I](where: Callable[[T], S], index: I) -> UnboundArrayLens[T, S, I]:
     """Create a lens that focuses on an index in an array in an object.
 
     Args:
