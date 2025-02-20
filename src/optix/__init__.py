@@ -1,12 +1,29 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Protocol
 
 import equinox as eqx
 import jax
 
-__all__ = ["Lens", "BoundLens", "UnboundLens", "BoundLens", "Focused", "focus"]
+__all__ = ["Lens", "FreeLens", "focus"]
+
+
+@dataclass(frozen=True)
+class _LensIndexingHelper[T, S]:
+    lens: Lens[T, S]
+
+    def __getitem__(self, index) -> Lens[T, S]:
+        return _ArrayLens(self.lens, index)
+
+
+@dataclass(frozen=True)
+class _FreeLensIndexingHelper[T, S]:
+    lens: FreeLens[T, S]
+
+    def __getitem__(self, index) -> FreeLens[T, S]:
+        return _FreeArrayLens(self.lens, index)
 
 
 class Lens[T, S](Protocol):
@@ -17,32 +34,44 @@ class Lens[T, S](Protocol):
         ...
 
     def set(self, val: S) -> T:
-        """Set the value of the focus in the object."""
+        """Set the value of the focus in the object."
+
+        Args:
+            val: The new value to set.
+
+        Returns:
+            A modified copy of the object.
+        """
         ...
 
     def apply(self, update: Callable[[S], S]) -> T:
-        """Apply a function to the focused value in the object."""
+        """Apply a function to the focused value in the object.
+
+        Args:
+            update: The function to apply to the focused value.
+
+        Returns:
+            A modified copy of the object
+        """
+        ...
+
+    @property
+    def at(self) -> _LensIndexingHelper[T, S]:
+        """Focus on an index in an array in the object.
+
+        Args:
+            index: The index to focus on.
+
+        Returns:
+            A bound lens.
+        """
         ...
 
 
 class FreeLens[T, S](Protocol):
     """A protocol for free lenses."""
 
-    def bind(self, obj: T) -> BoundLens[T, S]:
-        """Bind the lens to an object."""
-        ...
-
-
-class UnboundLens[T, S](eqx.Module):
-    """A lens that focuses on a value in an object.
-
-    Args:
-        where: A function that retrieves the focused value from the object.
-    """
-
-    where: Callable[[T], S]
-
-    def bind(self, obj: T) -> BoundLens[T, S]:
+    def bind(self, obj: T) -> Lens[T, S]:
         """Bind the lens to an object.
 
         Args:
@@ -51,10 +80,57 @@ class UnboundLens[T, S](eqx.Module):
         Returns:
             A bound lens.
         """
-        return BoundLens(obj, self.where)
+        ...
+
+    @property
+    def at(self) -> _FreeLensIndexingHelper[T, S]:
+        """Focus on an index in an array in the object.
+
+        Args:
+            index: The index to focus on.
+
+        Returns:
+            An unbound lens.
+        """
+        ...
 
 
-class BoundLens[T, S](eqx.Module):
+@dataclass(frozen=True)
+class _FreeLens[T, S]:
+    """A lens that focuses on a value in an object.
+
+    Args:
+        where: A function that retrieves the focused value from the object.
+    """
+
+    where: Callable[[T], S]
+
+    def bind(self, obj: T) -> Lens[T, S]:
+        """Bind the lens to an object.
+
+        Args:
+            obj: The object to bind to.
+
+        Returns:
+            A bound lens.
+        """
+        return _BoundLens(obj, self.where)
+
+    @property
+    def at(self) -> _FreeLensIndexingHelper[T, S]:
+        """Focus on an index in an array in the object.
+
+        Args:
+            index: The index to focus on.
+
+        Returns:
+            An unbound lens.
+        """
+        return _FreeLensIndexingHelper(self)
+
+
+@dataclass(frozen=True)
+class _BoundLens[T, S]:
     """A lens that focuses on a value in a bound object.
 
     Args:
@@ -95,38 +171,109 @@ class BoundLens[T, S](eqx.Module):
         """
         return eqx.tree_at(self.where, self.obj, replace=update(self.get()))
 
+    @property
+    def at(self) -> _LensIndexingHelper[T, S]:
+        """Focus on an index in an array in the object.
 
-class BoundArrayLens[T, S, I](eqx.Module):
+        Args:
+            index: The index to focus on.
+
+        Returns:
+            A bound lens.
+        """
+        return _LensIndexingHelper(self)
+
+
+@dataclass(frozen=True)
+class _ArrayLens[T, S, I]:
+    """A lens that focuses on an index in an array in a bound object.
+
+    Args:
+        lens: The lens to focus on.
+        index: The index to focus on.
+    """
+
     lens: Lens[T, S]
     index: I
 
     def get(self, **kwargs) -> S:
-        return jax.tree.map(lambda x: x.at[self.index].get(**kwargs), self.lens.get())
+        """Get the value of the focus in the object.
+
+        Args:
+            **kwargs: Additional arguments to pass to the jax getter.
+
+        Returns:
+            The focused value.
+        """
+
+        def _getter(x: jax.Array) -> jax.Array:
+            return x.at[self.index].get(**kwargs)
+
+        return jax.tree.map(_getter, self.lens.get())
 
     def set(self, val: S, **kwargs) -> T:
-        return self.lens.apply(
-            lambda out: jax.tree.map(
-                lambda x, y: x.at[self.index].set(y, **kwargs), out, val
-            )
-        )
+        def _setter(x: jax.Array, y: jax.Array) -> jax.Array:
+            return x.at[self.index].set(y, **kwargs)
+
+        return self.lens.apply(lambda out: jax.tree.map(_setter, out, val))
 
     def apply(self, update: Callable[[S], S], **kwargs) -> T:
-        return self.lens.apply(
-            lambda out: jax.tree.map(
-                lambda x: x.at[self.index].apply(update, **kwargs), out
-            )
-        )
+        def _update(x: jax.Array) -> jax.Array:
+            return x.at[self.index].apply(update, **kwargs)
+
+        return self.lens.apply(lambda out: jax.tree.map(_update, out))
+
+    @property
+    def at(self) -> _LensIndexingHelper[T, S]:
+        """Focus on an index in an array in the object.
+
+        Args:
+            index: The index to focus on.
+
+        Returns:
+            A bound lens.
+        """
+        raise ValueError("Cannot index and already indexed lens.")
 
 
-class UnboundArrayLens[T, S, I](eqx.Module):
-    lens: UnboundLens[T, S]
+@dataclass(frozen=True)
+class _FreeArrayLens[T, S, I]:
+    """A lens that focuses on an index in an array in a bound object.
+
+    Args:
+        lens: The lens to focus on.
+        index: The index to focus on.
+    """
+
+    lens: _FreeLens[T, S]
     index: I
 
-    def bind(self, obj: T) -> BoundArrayLens[T, S, I]:
-        return BoundArrayLens(self.lens.bind(obj), self.index)
+    def bind(self, obj: T) -> Lens[T, S]:
+        """Bind the lens to an object.
+
+        Args:
+            obj: The object to bind to.
+
+        Returns:
+            A bound lens.
+        """
+        return _ArrayLens(self.lens.bind(obj), self.index)
+
+    @property
+    def at(self) -> _FreeLensIndexingHelper[T, S]:
+        """Focus on an index in an array in the object.
+
+        Args:
+            index: The index to focus on.
+
+        Returns:
+            An unbound lens.
+        """
+        raise ValueError("Cannot index and already indexed lens.")
 
 
-class Focused[T](eqx.Module):
+@dataclass(frozen=True)
+class _Focused[T]:
     """An object that can be focused on.
 
     Args:
@@ -144,27 +291,15 @@ class Focused[T](eqx.Module):
         Returns:
             A bound lens.
         """
-        return BoundLens(self.obj, where)
-
-    def at_index[S, I](self, where: Callable[[T], S], index: I) -> BoundArrayLens[T, S]:
-        """Focus on an index in an array in the object.
-
-        Args:
-            where: A function that retrieves the focused value from the object.
-            index: The index to focus on.
-
-        Returns:
-            A bound lens.
-        """
-        return BoundArrayLens(self.at(where), index)
+        return _BoundLens(self.obj, where)
 
 
-def focus[T](obj: T) -> Focused[T]:
+def focus[T](obj: T) -> _Focused[T]:
     """Focus on an object."""
-    return Focused(obj)
+    return _Focused(obj)
 
 
-def lens[T, S](where: Callable[[T], S]) -> UnboundLens[T, S]:
+def lens[T, S](where: Callable[[T], S]) -> _FreeLens[T, S]:
     """Create a lens that focuses on a value in an object.
 
     Args:
@@ -173,17 +308,4 @@ def lens[T, S](where: Callable[[T], S]) -> UnboundLens[T, S]:
     Returns:
         An unbound lens.
     """
-    return UnboundLens(where)
-
-
-def array_lens[T, S, I](where: Callable[[T], S], index: I) -> UnboundArrayLens[T, S, I]:
-    """Create a lens that focuses on an index in an array in an object.
-
-    Args:
-        where: A function that retrieves the focused value from the object.
-        index: The index to focus on.
-
-    Returns:
-        An unbound lens.
-    """
-    return UnboundArrayLens(lens(where), index)
+    return _FreeLens(where)
