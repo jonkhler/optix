@@ -215,13 +215,10 @@ class _ArrayLens[T, S, I]:
         def _setter(x: jax.Array, y: jax.Array) -> jax.Array:
             return x.at[self.index].set(y, **kwargs)
 
-        return self.lens.apply(lambda out: jax.tree.map(_setter, out, val))
+        return self.lens.set(jax.tree.map(_setter, self.lens.get(), val))
 
     def apply(self, update: Callable[[S], S], **kwargs) -> T:
-        def _update(x: jax.Array) -> jax.Array:
-            return x.at[self.index].apply(update, **kwargs)
-
-        return self.lens.apply(lambda out: jax.tree.map(_update, out))
+        return self.set(update(self.get(**kwargs)), **kwargs)
 
     @property
     def at(self) -> _LensIndexingHelper[T, S]:

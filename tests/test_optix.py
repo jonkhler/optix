@@ -17,33 +17,47 @@ class Bar(eqx.Module):
     foo: Foo
 
 
+def assert_equal(x, y):
+    assert jax.tree.structure(x) == jax.tree.structure(
+        y
+    ), f"Tree structures do not match: {x}, {y}"
+    bool_tree = jax.tree.map(lambda x, y: jnp.allclose(x, y), x, y)
+    assert all(jax.tree.leaves(bool_tree)), f"Trees do not match: {x}, {y}"
+
+
 def test_indexing():
     bar = Bar(
         x=jnp.array([1.0, 2.0, 3.0]), foo=Foo(a=jnp.array([1.0, 2.0, 3.0]), b="hello")
     )
-    assert jnp.allclose(
-        focus(bar).at(lambda bar: bar.foo.a).get(), jnp.array([1.0, 2.0, 3.0])
-    )
-    assert jax.tree.map(
-        lambda x, y: jnp.allclose(x, y),
+    assert_equal(focus(bar).at(lambda bar: bar.foo.a).get(), jnp.array([1.0, 2.0, 3.0]))
+    assert_equal(
         focus(bar).at(lambda bar: bar.foo.a).apply(jnp.cos),
         Bar(
             x=jnp.array([1.0, 2.0, 3.0]),
             foo=Foo(a=jnp.cos(jnp.array([1.0, 2.0, 3.0])), b="hello"),
         ),
     )
-    assert focus(bar).at(lambda bar: bar.foo.a).at[1].get() == 2.0
-    jax.tree.map(
-        lambda x, y: jnp.allclose(x, y),
+    assert_equal(focus(bar).at(lambda bar: bar.foo.a).at[1].get(), 2.0)
+    assert_equal(
         focus(bar).at(lambda bar: bar.foo.a).at[1].apply(jnp.cos),
         Bar(
             x=jnp.array([1.0, 2.0, 3.0]),
             foo=Foo(a=jnp.array([1.0, jnp.cos(2.0), 3.0]), b="hello"),
         ),
     )
-    assert jnp.allclose(
+    assert_equal(
         focus(bar.foo.a).at(lambda x: x).at[1].apply(jnp.cos),
         jnp.array([1.0, jnp.cos(2.0), 3.0]),
+    )
+    assert_equal(
+        focus(bar)
+        .at(lambda bar: (bar.foo.a, bar.x, bar.foo.a))
+        .at[jnp.array([0, 1])]
+        .apply(lambda t: (jnp.sin(t[0]), jnp.cos(t[1]), jnp.tan(t[2]))),
+        Bar(
+            x=jnp.array([jnp.cos(1.0), jnp.cos(2.0), 3.0]),
+            foo=Foo(a=jnp.array([jnp.tan(1.0), jnp.tan(2.0), 3.0]), b="hello"),
+        ),
     )
 
 
